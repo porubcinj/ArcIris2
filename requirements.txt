@@ -1,0 +1,9 @@
+easydict
+mxnet
+onnx
+opencv-python
+scikit-learn
+tensorboard
+toml
+torch
+torchvision
