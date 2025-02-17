@@ -137,12 +137,13 @@ class DataLoaderX(DataLoader):
 class MXFaceDataset(Dataset):
     def __init__(self, root_dir, local_rank):
         super(MXFaceDataset, self).__init__()
-        self.transform = transforms.Compose(
-            [transforms.ToPILImage(),
-             transforms.RandomHorizontalFlip(),
-             transforms.ToTensor(),
-             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-             ])
+        self.transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((64, 512)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
         self.root_dir = root_dir
         self.local_rank = local_rank
         path_imgrec = os.path.join(root_dir, 'train.rec')

@@ -11,7 +11,6 @@ from partial_fc_v2 import PartialFC_V2
 from torch import distributed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from utils.create_dataset import create_dataset
 from utils.utils_callbacks import CallBackLogging, CallBackVerification
 from utils.utils_config import get_config
 from utils.utils_distributed_sampler import setup_seed
@@ -40,7 +39,6 @@ except KeyError:
 
 def main(args):
     cfg = get_config(args.config)
-    create_dataset(cfg.images_dir, cfg.dataset_dir, cfg.img_uid_map)
 
     setup_seed(seed=cfg.seed, cuda_deterministic=False)
 

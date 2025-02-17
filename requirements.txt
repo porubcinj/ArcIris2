@@ -1,5 +1,6 @@
 easydict
 mxnet
+numpy<1.24
 onnx
 opencv-python
 scikit-learn
