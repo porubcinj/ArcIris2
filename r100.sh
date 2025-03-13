@@ -10,7 +10,7 @@ set -e
 set -o pipefail
 
 PROJECT_DIR="/afs/crc.nd.edu/user/j/jporubci/Private/ArcIris2"
-CONFIG="ms1mv3_r100_onegpu"
+CONFIG="r100"
 
 cd "$PROJECT_DIR"
 
