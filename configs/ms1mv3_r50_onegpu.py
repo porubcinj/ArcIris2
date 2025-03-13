@@ -1,9 +1,5 @@
 from easydict import EasyDict as edict
 
-# make training faster
-# our RAM is 256G
-# mount -t tmpfs -o size=140G  tmpfs /train_tmp
-
 config = edict()
 config.margin_list = (1.0, 0.5, 0.0)
 config.network = "r50"
@@ -21,9 +17,10 @@ config.verbose = 2000
 config.dali = False
 
 config.rec = "."
-config.num_classes = 2207
-config.num_image = 461090
+config.num_classes = 1657
+config.num_image = 161335
 config.num_epoch = 200
 config.warmup_epoch = 0
 config.val_targets = []
+config.image_size = (64, 512)
 config.num_workers = 1

@@ -13,7 +13,7 @@ from torch import distributed
 
 class CallBackVerification(object):
     
-    def __init__(self, val_targets, rec_prefix, summary_writer=None, image_size=(112, 112), wandb_logger=None):
+    def __init__(self, val_targets, rec_prefix, summary_writer=None, image_size=(64, 512), wandb_logger=None):
         self.rank: int = distributed.get_rank()
         self.highest_acc: float = 0.0
         self.highest_acc_list: List[float] = [0.0] * len(val_targets)

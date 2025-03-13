@@ -100,7 +100,7 @@ class ArcFaceORT:
         if len(graph.node)<8:
             return "too small onnx graph"
 
-        input_size = (112,112)
+        input_size = (64, 512)
         self.crop = None
         if track=='cfat':
             crop_file = osp.join(self.model_path, 'crop.txt')

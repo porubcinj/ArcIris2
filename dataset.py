@@ -139,7 +139,6 @@ class MXFaceDataset(Dataset):
         super(MXFaceDataset, self).__init__()
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize((64, 512)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -177,7 +176,7 @@ class MXFaceDataset(Dataset):
 class SyntheticDataset(Dataset):
     def __init__(self):
         super(SyntheticDataset, self).__init__()
-        img = np.random.randint(0, 255, size=(112, 112, 3), dtype=np.int32)
+        img = np.random.randint(0, 255, size=(64, 512, 3), dtype=np.int32)
         img = np.transpose(img, (2, 0, 1))
         img = torch.from_numpy(img).squeeze(0).float()
         img = ((img / 255) - 0.5) / 0.5

@@ -44,7 +44,7 @@ class AlignedDataSet(mx.gluon.data.Dataset):
         landmark5 = np.array([float(x) for x in name_lmk_score[1:-1]], dtype=np.float32).reshape((5, 2))
         st = skimage.transform.SimilarityTransform()
         st.estimate(landmark5, SRC)
-        img = cv2.warpAffine(img, st.params[0:2, :], (112, 112), borderValue=0.0)
+        img = cv2.warpAffine(img, st.params[0:2, :], (64, 512), borderValue=0.0)
         img_1 = np.expand_dims(img, 0)
         img_2 = np.expand_dims(np.fliplr(img), 0)
         output = np.concatenate((img_1, img_2), axis=0).astype(np.float32)

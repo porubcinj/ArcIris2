@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -m bae
 #$ -M jporubci@nd.edu
-#$ -N ArcIris2
+#$ -N ArcIris2_create_dataset
 #$ -q gpu
 #$ -l gpu=1
 #$ -l h="qa-a10*|qa-rtx6k*"
@@ -11,10 +11,11 @@ set -o pipefail
 
 PROJECT_DIR="/afs/crc.nd.edu/user/j/jporubci/Private/ArcIris2"
 IMAGES_DIR="/afs/crc/group/cvrl/czajka/gbir2/aczajka/BXGRID/iris_segmented_SegNet"
-TRAIN_DIR="/project01/cvrl/jporubci/ArcIris Images/train"
-TEST_DIR="/project01/cvrl/jporubci/ArcIris Images/test"
+OUT_DIR="/project01/cvrl/jporubci/ArcIris Dataset"
+VAL_SPLIT="0.2"
+TEST_SPLIT="0.2"
 IMG_UID_MAP="img_uid_map.json"
-TRAIN_TEST_SPLIT=0.8
+MAX_THREADS="32"
 SEED=42
 
 cd "$PROJECT_DIR"
@@ -27,8 +28,4 @@ source .venv/bin/activate
 pip install --upgrade pip -q
 pip install -r requirements.txt -q
 
-python utils/create_dataset.py "$IMAGES_DIR" "$TRAIN_DIR" "$TEST_DIR" "$IMG_UID_MAP" "$TRAIN_TEST_SPLIT"
-python -m mxnet.tools.im2rec --list --recursive train "$TRAIN_DIR"
-python -m mxnet.tools.im2rec --num-thread 16 --quality 100 train "$TRAIN_DIR"
-python -m mxnet.tools.im2rec --list --recursive test "$TEST_DIR"
-python -m mxnet.tools.im2rec --num-thread 16 --quality 100 test "$TEST_DIR"
+python utils/create_dataset.py "$IMAGES_DIR" "$OUT_DIR" "$VAL_SPLIT" "$TEST_SPLIT" "$IMG_UID_MAP" "$MAX_THREADS" "$SEED"

@@ -5,7 +5,7 @@ import torch
 
 def convert_onnx(net, path_module, output, opset=11, simplify=False):
     assert isinstance(net, torch.nn.Module)
-    img = np.random.randint(0, 255, size=(112, 112, 3), dtype=np.int32)
+    img = np.random.randint(0, 255, size=(64, 512, 3), dtype=np.int32)
     img = img.astype(np.float)
     img = (img / 255. - 0.5) / 0.5  # torch style norm
     img = img.transpose((2, 0, 1))

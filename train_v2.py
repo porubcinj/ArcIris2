@@ -131,7 +131,7 @@ def main(args):
 
     callback_verification = CallBackVerification(
         val_targets=cfg.val_targets, rec_prefix=cfg.rec, 
-        summary_writer=summary_writer
+        summary_writer=summary_writer, image_size=cfg.image_size,
     )
     callback_logging = CallBackLogging(
         frequent=cfg.frequent,
@@ -142,7 +142,7 @@ def main(args):
     )
 
     loss_am = AverageMeter()
-    amp = torch.cuda.amp.grad_scaler.GradScaler(growth_interval=100)
+    amp = torch.amp.GradScaler('cuda', growth_interval=100)
 
     for epoch in range(start_epoch, cfg.num_epoch):
 
