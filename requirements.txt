@@ -8,3 +8,4 @@ tensorboard
 toml
 torch
 torchvision
+tqdm

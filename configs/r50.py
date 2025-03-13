@@ -17,8 +17,8 @@ config.verbose = 2000
 config.dali = False
 
 config.rec = "."
-config.num_classes = 1657
-config.num_image = 161335
+config.num_classes = 2209
+config.num_image = 183459
 config.num_epoch = 200
 config.warmup_epoch = 0
 config.val_targets = []

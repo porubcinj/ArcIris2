@@ -5,5 +5,4 @@
 *.lst
 *.rec
 **/*.pt
-ArcIris2_create_dataset.*
 work_dirs
