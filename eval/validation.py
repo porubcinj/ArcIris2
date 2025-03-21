@@ -1,8 +1,14 @@
 import numpy as np
 import pickle
 import os
+from torch import Tensor
 from tqdm import tqdm
 import cv2
+import torch
+import sklearn
+from eval.verification import evaluate
+import logging
+from torch.nn.parallel import DistributedDataParallel
 
 def create_bin_file(image_dir, output_bin_path, pairs_list=None):
     """
@@ -77,3 +83,52 @@ def create_bin_file(image_dir, output_bin_path, pairs_list=None):
         pickle.dump(data_list, f)
     
     print(f"Created validation bin file at {output_bin_path} with {len(data_list)} pairs")
+
+def ver_test(backbone: DistributedDataParallel, global_step: int, validation_datasets: tuple[tuple[tuple[tuple[Tensor, Tensor], ...], tuple[bool, ...]], ...]):
+    for dataset in validation_datasets:
+        tpr, fpr, acc, std, xnorm, val, val_std, far, _ = test(backbone, dataset)
+
+        logging.info(f'[val][{global_step}]XNorm: {xnorm}')
+        logging.info(f'[val][{global_step}]tpr: {tpr}')
+        logging.info(f'[val][{global_step}]fpr: {fpr}')
+        logging.info(f'[val][{global_step}]val: {val}')
+        logging.info(f'[val][{global_step}]val_std: {val_std}')
+        logging.info(f'[val][{global_step}]far: {far}')
+        logging.info(f'[val][{global_step}]Accuracy: {acc}±{std}')
+
+@torch.no_grad()
+def test(backbone: DistributedDataParallel, dataset):
+    embeddings = None
+
+    images = dataset[0]
+    issame_list = dataset[1]
+
+    assert len(images) == len(issame_list) * 2
+
+    for i, image in enumerate(images):
+        image = ((image / 255) - 0.5) / 0.5
+        assert not torch.isnan(image).any(), "Image contains NaN values!"
+        net_out: Tensor = backbone(image)
+        assert not torch.isnan(net_out).any(), "net_out contains NaN values!"
+        _embeddings = net_out.detach().cpu().numpy()
+        assert not torch.isnan(_embeddings).any(), "_embeddings contains NaN values!"
+
+        if embeddings is None:
+            embeddings = np.zeros((len(images), _embeddings.shape[1]))
+        embeddings[i, :] = _embeddings
+
+    _xnorm = 0.0
+    _xnorm_cnt = 0
+    for i in range(embeddings.shape[0]):
+        _em = embeddings[i]
+        _norm = np.linalg.norm(_em)
+        _xnorm += _norm
+        _xnorm_cnt += 1
+    _xnorm /= _xnorm_cnt
+
+    embeddings = sklearn.preprocessing.normalize(embeddings)
+    issame_list = (entry[1] for entry in dataset)
+    tpr, fpr, accuracy, val, val_std, far = evaluate(embeddings, issame_list)
+    acc, std = np.mean(accuracy), np.std(accuracy)
+
+    return tpr, fpr, acc, std, _xnorm, val, val_std, far, embeddings

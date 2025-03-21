@@ -19,7 +19,7 @@ class CallBackVerification(object):
         self.highest_acc_list: List[float] = [0.0] * len(val_targets)
         self.ver_list: List[object] = []
         self.ver_name_list: List[str] = []
-        if self.rank is 0:
+        if self.rank == 0:
             self.init_dataset(val_targets=val_targets, data_dir=rec_prefix, image_size=image_size)
 
         self.summary_writer = summary_writer
@@ -29,7 +29,8 @@ class CallBackVerification(object):
         results = []
         for i in range(len(self.ver_list)):
             acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(
-                self.ver_list[i], backbone, 10, 10)
+                self.ver_list[i], backbone, 3, 10
+            )
             logging.info('[%s][%d]XNorm: %f' % (self.ver_name_list[i], global_step, xnorm))
             logging.info('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (self.ver_name_list[i], global_step, acc2, std2))
 
@@ -41,13 +42,12 @@ class CallBackVerification(object):
                     f'Acc/val-Acc1 {self.ver_name_list[i]}': acc1,
                     f'Acc/val-Acc2 {self.ver_name_list[i]}': acc2,
                     # f'Acc/val-std1 {self.ver_name_list[i]}': std1,
-                    # f'Acc/val-std2 {self.ver_name_list[i]}': acc2,
+                    # f'Acc/val-std2 {self.ver_name_list[i]}': std2,
                 })
 
             if acc2 > self.highest_acc_list[i]:
                 self.highest_acc_list[i] = acc2
-            logging.info(
-                '[%s][%d]Accuracy-Highest: %1.5f' % (self.ver_name_list[i], global_step, self.highest_acc_list[i]))
+            logging.info('[%s][%d]Accuracy-Highest: %1.5f' % (self.ver_name_list[i], global_step, self.highest_acc_list[i]))
             results.append(acc2)
 
     def init_dataset(self, val_targets, data_dir, image_size):
@@ -59,7 +59,7 @@ class CallBackVerification(object):
                 self.ver_name_list.append(name)
 
     def __call__(self, num_update, backbone: torch.nn.Module):
-        if self.rank is 0 and num_update > 0:
+        if self.rank == 0 and num_update > 0:
             backbone.eval()
             self.ver_test(backbone, num_update)
             backbone.train()

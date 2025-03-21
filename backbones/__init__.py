@@ -14,10 +14,12 @@ def get_model(name, **kwargs):
         return iresnet100(False, **kwargs)
     elif name == "r200":
         return iresnet200(False, **kwargs)
+    else:
+        raise ValueError()
+"""
     elif name == "r2060":
         from .iresnet2060 import iresnet2060
         return iresnet2060(False, **kwargs)
-
     elif name == "mbf":
         fp16 = kwargs.get("fp16", False)
         num_features = kwargs.get("num_features", 512)
@@ -87,6 +89,4 @@ def get_model(name, **kwargs):
         return VisionTransformer(
             img_size=112, patch_size=9, num_classes=num_features, embed_dim=1024, depth=48,
             num_heads=8, drop_path_rate=0.1, norm_layer="ln", mask_ratio=0, using_checkpoint=True)
-
-    else:
-        raise ValueError()
+"""

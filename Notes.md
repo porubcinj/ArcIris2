@@ -1,0 +1,1 @@
+Manual accuracy of pairs validation, save model every 10 epochs, compare distributions of distances for validation, see if distributions overlap (problem), if not overlap, then good. Also see if overfitting or not. Finish by Friday.

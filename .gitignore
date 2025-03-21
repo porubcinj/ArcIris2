@@ -6,3 +6,4 @@
 *.rec
 **/*.pt
 work_dirs
+*.bin

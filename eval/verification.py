@@ -37,6 +37,9 @@ from scipy import interpolate
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 
+from PIL import Image
+from torch import Tensor
+
 
 class LFold:
     def __init__(self, n_splits=2, shuffle=False):
@@ -197,213 +200,29 @@ def evaluate(embeddings, actual_issame, nrof_folds=10, pca=0):
     return tpr, fpr, accuracy, val, val_std, far
 
 @torch.no_grad()
-def load_bin(path, image_size):
-    try:
-        with open(path, 'rb') as f:
-            bins, issame_list = pickle.load(f)  # py2
-    except UnicodeDecodeError as e:
-        with open(path, 'rb') as f:
-            bins, issame_list = pickle.load(f, encoding='bytes')  # py3
-    data_list = []
-    for flip in [0, 1]:
-        data = torch.empty((len(issame_list) * 2, 3, image_size[0], image_size[1]))
-        data_list.append(data)
-    for idx in range(len(issame_list) * 2):
-        _bin = bins[idx]
-        img = mx.image.imdecode(_bin)
-        if img.shape[1] != image_size[0]:
-            img = mx.image.resize_short(img, image_size[0])
-        img = nd.transpose(img, axes=(2, 0, 1))
-        for flip in [0, 1]:
-            if flip == 1:
-                img = mx.ndarray.flip(data=img, axis=2)
-            data_list[flip][idx][:] = torch.from_numpy(img.asnumpy())
-        if idx % 1000 == 0:
-            print('loading bin', idx)
-    print(data_list[0].shape)
-    return data_list, issame_list
+def load_bin(path, image_size=(64, 512)):
+    with open(path, 'rb') as f:
+        bins = pickle.load(f)
 
-@torch.no_grad()
-def test(data_set, backbone, batch_size, nfolds=10):
-    print('testing verification..')
-    data_list = data_set[0]
-    issame_list = data_set[1]
     embeddings_list = []
-    time_consumed = 0.0
-    for i in range(len(data_list)):
-        data = data_list[i]
-        embeddings = None
-        ba = 0
-        while ba < data.shape[0]:
-            bb = min(ba + batch_size, data.shape[0])
-            count = bb - ba
-            _data = data[bb - batch_size: bb]
-            time0 = datetime.datetime.now()
-            img = ((_data / 255) - 0.5) / 0.5
-            net_out: torch.Tensor = backbone(img)
-            _embeddings = net_out.detach().cpu().numpy()
-            time_now = datetime.datetime.now()
-            diff = time_now - time0
-            time_consumed += diff.total_seconds()
-            if embeddings is None:
-                embeddings = np.zeros((data.shape[0], _embeddings.shape[1]))
-            embeddings[ba:bb, :] = _embeddings[(batch_size - count):, :]
-            ba = bb
-        embeddings_list.append(embeddings)
+    issame_list = []
 
-    _xnorm = 0.0
-    _xnorm_cnt = 0
-    for embed in embeddings_list:
-        for i in range(embed.shape[0]):
-            _em = embed[i]
-            _norm = np.linalg.norm(_em)
-            _xnorm += _norm
-            _xnorm_cnt += 1
-    _xnorm /= _xnorm_cnt
+    for i in range(len(bins)):
+        _bin = bins[i]
+        img1, img2, issame = _bin[0], _bin[1], _bin[2]
 
-    embeddings = embeddings_list[0].copy()
-    embeddings = sklearn.preprocessing.normalize(embeddings)
-    acc1 = 0.0
-    std1 = 0.0
-    embeddings = embeddings_list[0] + embeddings_list[1]
-    embeddings = sklearn.preprocessing.normalize(embeddings)
-    print(embeddings.shape)
-    print('infer time', time_consumed)
-    _, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=nfolds)
-    acc2, std2 = np.mean(accuracy), np.std(accuracy)
-    return acc1, std1, acc2, std2, _xnorm, embeddings_list
+        img1 = Image.fromarray(img1).convert("RGB")
+        img2 = Image.fromarray(img2).convert("RGB")
 
+        img1 = torch.from_numpy(np.array(img1)).float().permute(2, 0, 1).unsqueeze(0)
+        img2 = torch.from_numpy(np.array(img2)).float().permute(2, 0, 1).unsqueeze(0)
 
-def dumpR(data_set,
-          backbone,
-          batch_size,
-          name='',
-          data_extra=None,
-          label_shape=None):
-    print('dump verification embedding..')
-    data_list = data_set[0]
-    issame_list = data_set[1]
-    embeddings_list = []
-    time_consumed = 0.0
-    for i in range(len(data_list)):
-        data = data_list[i]
-        embeddings = None
-        ba = 0
-        while ba < data.shape[0]:
-            bb = min(ba + batch_size, data.shape[0])
-            count = bb - ba
+        embeddings_list.append(img1)
+        embeddings_list.append(img2)
+        issame_list.append(issame)
 
-            _data = nd.slice_axis(data, axis=0, begin=bb - batch_size, end=bb)
-            time0 = datetime.datetime.now()
-            if data_extra is None:
-                db = mx.io.DataBatch(data=(_data,), label=(_label,))
-            else:
-                db = mx.io.DataBatch(data=(_data, _data_extra),
-                                     label=(_label,))
-            model.forward(db, is_train=False)
-            net_out = model.get_outputs()
-            _embeddings = net_out[0].asnumpy()
-            time_now = datetime.datetime.now()
-            diff = time_now - time0
-            time_consumed += diff.total_seconds()
-            if embeddings is None:
-                embeddings = np.zeros((data.shape[0], _embeddings.shape[1]))
-            embeddings[ba:bb, :] = _embeddings[(batch_size - count):, :]
-            ba = bb
-        embeddings_list.append(embeddings)
-    embeddings = embeddings_list[0] + embeddings_list[1]
-    embeddings = sklearn.preprocessing.normalize(embeddings)
-    actual_issame = np.asarray(issame_list)
-    outname = os.path.join('temp.bin')
-    with open(outname, 'wb') as f:
-        pickle.dump((embeddings, issame_list),
-                    f,
-                    protocol=pickle.HIGHEST_PROTOCOL)
+    embeddings_array = np.array(embeddings_list)
 
+    print(f"embeddings_array.shape: {embeddings_array.shape}")
 
-# if __name__ == '__main__':
-#
-#     parser = argparse.ArgumentParser(description='do verification')
-#     # general
-#     parser.add_argument('--data-dir', default='', help='')
-#     parser.add_argument('--model',
-#                         default='../model/softmax,50',
-#                         help='path to load model.')
-#     parser.add_argument('--target',
-#                         default='lfw,cfp_ff,cfp_fp,agedb_30',
-#                         help='test targets.')
-#     parser.add_argument('--gpu', default=0, type=int, help='gpu id')
-#     parser.add_argument('--batch-size', default=32, type=int, help='')
-#     parser.add_argument('--max', default='', type=str, help='')
-#     parser.add_argument('--mode', default=0, type=int, help='')
-#     parser.add_argument('--nfolds', default=10, type=int, help='')
-#     args = parser.parse_args()
-#     image_size = [112, 112]
-#     print('image_size', image_size)
-#     ctx = mx.gpu(args.gpu)
-#     nets = []
-#     vec = args.model.split(',')
-#     prefix = args.model.split(',')[0]
-#     epochs = []
-#     if len(vec) == 1:
-#         pdir = os.path.dirname(prefix)
-#         for fname in os.listdir(pdir):
-#             if not fname.endswith('.params'):
-#                 continue
-#             _file = os.path.join(pdir, fname)
-#             if _file.startswith(prefix):
-#                 epoch = int(fname.split('.')[0].split('-')[1])
-#                 epochs.append(epoch)
-#         epochs = sorted(epochs, reverse=True)
-#         if len(args.max) > 0:
-#             _max = [int(x) for x in args.max.split(',')]
-#             assert len(_max) == 2
-#             if len(epochs) > _max[1]:
-#                 epochs = epochs[_max[0]:_max[1]]
-#
-#     else:
-#         epochs = [int(x) for x in vec[1].split('|')]
-#     print('model number', len(epochs))
-#     time0 = datetime.datetime.now()
-#     for epoch in epochs:
-#         print('loading', prefix, epoch)
-#         sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
-#         # arg_params, aux_params = ch_dev(arg_params, aux_params, ctx)
-#         all_layers = sym.get_internals()
-#         sym = all_layers['fc1_output']
-#         model = mx.mod.Module(symbol=sym, context=ctx, label_names=None)
-#         # model.bind(data_shapes=[('data', (args.batch_size, 3, image_size[0], image_size[1]))], label_shapes=[('softmax_label', (args.batch_size,))])
-#         model.bind(data_shapes=[('data', (args.batch_size, 3, image_size[0],
-#                                           image_size[1]))])
-#         model.set_params(arg_params, aux_params)
-#         nets.append(model)
-#     time_now = datetime.datetime.now()
-#     diff = time_now - time0
-#     print('model loading time', diff.total_seconds())
-#
-#     ver_list = []
-#     ver_name_list = []
-#     for name in args.target.split(','):
-#         path = os.path.join(args.data_dir, name + ".bin")
-#         if os.path.exists(path):
-#             print('loading.. ', name)
-#             data_set = load_bin(path, image_size)
-#             ver_list.append(data_set)
-#             ver_name_list.append(name)
-#
-#     if args.mode == 0:
-#         for i in range(len(ver_list)):
-#             results = []
-#             for model in nets:
-#                 acc1, std1, acc2, std2, xnorm, embeddings_list = test(
-#                     ver_list[i], model, args.batch_size, args.nfolds)
-#                 print('[%s]XNorm: %f' % (ver_name_list[i], xnorm))
-#                 print('[%s]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], acc1, std1))
-#                 print('[%s]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], acc2, std2))
-#                 results.append(acc2)
-#             print('Max of [%s] is %1.5f' % (ver_name_list[i], np.max(results)))
-#     elif args.mode == 1:
-#         raise ValueError
-#     else:
-#         model = nets[0]
-#         dumpR(ver_list[0], model, args.batch_size, args.target)
+    return embeddings_array, np.array(issame_list)
