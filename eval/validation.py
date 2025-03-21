@@ -84,7 +84,7 @@ def create_bin_file(image_dir, output_bin_path, pairs_list=None):
     
     print(f"Created validation bin file at {output_bin_path} with {len(data_list)} pairs")
 
-def ver_test(backbone: DistributedDataParallel, global_step: int, validation_datasets: tuple[tuple[tuple[tuple[Tensor, Tensor], ...], tuple[bool, ...]], ...]):
+def ver_test(backbone: DistributedDataParallel, global_step: int, validation_datasets):
     for dataset in validation_datasets:
         tpr, fpr, acc, std, xnorm, val, val_std, far, _ = test(backbone, dataset)
 
