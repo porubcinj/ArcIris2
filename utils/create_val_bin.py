@@ -1,229 +1,76 @@
-import argparse
-from collections import defaultdict
-import numbers
 import os
-import pickle
+import random
 import numpy as np
-import cv2
-from tqdm import tqdm
+import torch
+from torchvision.io import decode_image, ImageReadMode
+import torchvision.transforms as transforms
+import pickle
+import sys
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Create validation bin file')
-    parser.add_argument('--val_dataset', type=str, required=True, help='Path to validation dataset directory or MXNet record prefix')
-    parser.add_argument('--output', type=str, required=True, help='Output path for .bin file')
-    parser.add_argument('--num_pairs', type=int, default=10000, help='Number of face pairs to generate')
-    parser.add_argument('--same_ratio', type=float, default=0.5, help='Ratio of same-identity pairs')
-    parser.add_argument('--use_mxnet', action='store_true', help='Use MXNet record files instead of directory')
-    return parser.parse_args()
+def create_val_bin(val_dir, num_pairs, bin_path="val.bin", seed=None):
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
-def create_bin_from_directory(dataset_dir, output_path, num_pairs, same_ratio):
-    identities = [d for d in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, d))]
-    print(f"Found {len(identities)} identities in validation dataset")
+    identity_dirs = [os.path.join(val_dir, d) for d in os.listdir(val_dir) if os.path.isdir(os.path.join(val_dir, d))]
+    identity_dict = {identity: [os.path.join(identity, f) for f in os.listdir(identity) if f.endswith(".png")]
+                     for identity in identity_dirs}
 
-    data_list = []
-    num_same = int(num_pairs * same_ratio)
-    num_diff = num_pairs - num_same
+    identity_dict = {k: v for k, v in identity_dict.items() if len(v) > 1}
+    identities = list(identity_dict.keys())
 
-    # Generate same-identity pairs
-    print("Generating same-identity pairs...")
-    same_pairs = 0
-    for identity in tqdm(identities):
-        identity_dir = os.path.join(dataset_dir, identity)
-        images = [f for f in os.listdir(identity_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
+    if len(identity_dict.keys()) < 2:
+        raise ValueError("Not enough identities with at least 2 images to generate pairs.")
 
-        if len(images) < 2:
-            continue
+    same_pairs = set()
+    diff_pairs = set()
+    labels = []
 
-        # Create pairs from this identity
-        for i in range(min(len(images), 10)):
-            for j in range(i+1, min(len(images), 10)):
-                if same_pairs >= num_same:
-                    break
+    # Same-identity
+    while len(same_pairs) < num_pairs // 2:
+        identity = random.choice(identities)
+        images = identity_dict[identity]
+        img1, img2 = random.sample(images, 2)
+        pair = tuple(sorted([img1, img2]))
+        if pair not in same_pairs:
+            same_pairs.add(pair)
+            labels.append(1)
 
-                img1_path = os.path.join(identity_dir, images[i])
-                img2_path = os.path.join(identity_dir, images[j])
+    # Different-identity
+    while len(diff_pairs) < num_pairs // 2:
+        id1, id2 = random.sample(identities, 2)
+        img1 = random.choice(identity_dict[id1])
+        img2 = random.choice(identity_dict[id2])
+        pair = tuple(sorted([img1, img2]))
+        if pair not in diff_pairs:
+            diff_pairs.add(pair)
+            labels.append(0)
 
-                img1 = cv2.imread(img1_path)
-                img2 = cv2.imread(img2_path)
+    all_pairs = list(same_pairs) + list(diff_pairs)
 
-                if img1 is None or img2 is None:
-                    continue
+    # Load images into a PyTorch Tensor
+    tensor_list = []
+    for img_path1, img_path2 in all_pairs:
+        img1 = decode_image(img_path1, mode=ImageReadMode.RGB)
+        img2 = decode_image(img_path2, mode=ImageReadMode.RGB)
+        tensor_list.extend([img1, img2])
 
-                # Convert to RGB (insightface expects RGB)
-                img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-                img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+    # Create tensor (2*num_pairs, C, H, W)
+    image_tensor = torch.stack(tensor_list) / 255.0
+    # Convert labels to NumPy array
+    label_array = np.array(labels, dtype=np.uint8)
 
-                # No resizing needed if already 64x512
-                data_list.append((img1, img2, 1))  # 1 indicates same identity
-                same_pairs += 1
+    # Save to bin_path
+    with open(bin_path, "wb") as f:
+        pickle.dump((image_tensor, label_array), f)
 
-            if same_pairs >= num_same:
-                break
-
-        if same_pairs >= num_same:
-            break
-
-    # Generate different-identity pairs
-    print("Generating different-identity pairs...")
-    diff_pairs = 0
-    for _ in tqdm(range(num_diff)):
-        # Randomly select two different identities
-        id1, id2 = np.random.choice(identities, 2, replace=False)
-
-        id1_dir = os.path.join(dataset_dir, id1)
-        id2_dir = os.path.join(dataset_dir, id2)
-
-        id1_images = [f for f in os.listdir(id1_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
-        id2_images = [f for f in os.listdir(id2_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
-
-        if not id1_images or not id2_images:
-            continue
-
-        img1_path = os.path.join(id1_dir, np.random.choice(id1_images))
-        img2_path = os.path.join(id2_dir, np.random.choice(id2_images))
-
-        img1 = cv2.imread(img1_path)
-        img2 = cv2.imread(img2_path)
-
-        if img1 is None or img2 is None:
-            continue
-
-        # Convert to RGB
-        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
-
-        data_list.append((img1, img2, 0))  # 0 indicates different identity
-        diff_pairs += 1
-
-        if diff_pairs >= num_diff:
-            break
-
-    print(f"Created {len(data_list)} pairs: {same_pairs} same-identity, {diff_pairs} different-identity")
-
-    # Save to binary file
-    with open(output_path, 'wb') as f:
-        pickle.dump(data_list, f)
-
-    print(f"Saved validation bin file to {output_path}")
-
-def create_bin_from_mxnet(dataset_prefix, output_path, num_pairs, same_ratio):
-    try:
-        import mxnet as mx
-        from mxnet import recordio
-    except ImportError:
-        print("MXNet not installed. Please install MXNet to use MXNet record files.")
-        return
-
-    # Open MXNet record file
-    idx_path = f"{dataset_prefix}.idx"
-    rec_path = f"{dataset_prefix}.rec"
-
-    print(f"Reading MXNet record files: {idx_path}, {rec_path}")
-
-    imgrec = recordio.MXIndexedRecordIO(idx_path, rec_path, 'r')
-
-    # Build identity to index mapping
-    id_label_dict = defaultdict(list)
-    idx_list = list(imgrec.keys)
-
-    for idx in tqdm(idx_list, desc="Indexing identities"):
-        s = imgrec.read_idx(idx)
-        header, _ = recordio.unpack(s)
-        if not isinstance(header.label, numbers.Number):
-            id_label = int(header.label[0])
-        else:
-            id_label = int(header.label)
-
-        id_label_dict[id_label].append(idx)
-
-    id_list = list(id_label_dict.keys())
-    print(f"Found {len(id_list)} identities in MXNet record file")
-
-    data_list = []
-    num_same = int(num_pairs * same_ratio)
-    num_diff = num_pairs - num_same
-
-    # Generate same-identity pairs
-    print("Generating same-identity pairs...")
-    same_pairs = 0
-    for id_label in tqdm(id_list):
-        indices = id_label_dict[id_label]
-
-        if len(indices) < 2:
-            continue
-
-        # Create pairs from this identity
-        for i in range(min(len(indices), 10)):
-            for j in range(i+1, min(len(indices), 10)):
-                if same_pairs >= num_same:
-                    break
-
-                idx1 = indices[i]
-                idx2 = indices[j]
-
-                s1 = imgrec.read_idx(idx1)
-                s2 = imgrec.read_idx(idx2)
-
-                _, img1 = recordio.unpack(s1)
-                _, img2 = recordio.unpack(s2)
-
-                img1 = mx.image.imdecode(img1).asnumpy()
-                img2 = mx.image.imdecode(img2).asnumpy()
-
-                data_list.append((img1, img2, 1))  # 1 indicates same identity
-                same_pairs += 1
-
-            if same_pairs >= num_same:
-                break
-
-        if same_pairs >= num_same:
-            break
-
-    # Generate different-identity pairs
-    print("Generating different-identity pairs...")
-    diff_pairs = 0
-    for _ in tqdm(range(num_diff)):
-        # Randomly select two different identities
-        id1, id2 = np.random.choice(id_list, 2, replace=False)
-
-        indices1 = id_label_dict[id1]
-        indices2 = id_label_dict[id2]
-
-        idx1 = np.random.choice(indices1)
-        idx2 = np.random.choice(indices2)
-
-        s1 = imgrec.read_idx(idx1)
-        s2 = imgrec.read_idx(idx2)
-
-        _, img1 = recordio.unpack(s1)
-        _, img2 = recordio.unpack(s2)
-
-        img1 = mx.image.imdecode(img1).asnumpy()
-        img2 = mx.image.imdecode(img2).asnumpy()
-
-        data_list.append((img1, img2, 0))  # 0 indicates different identity
-        diff_pairs += 1
-
-        if diff_pairs >= num_diff:
-            break
-
-    print(f"Created {len(data_list)} pairs: {same_pairs} same-identity, {diff_pairs} different-identity")
-
-    # Save to binary file
-    with open(output_path, 'wb') as f:
-        pickle.dump(data_list, f)
-
-    print(f"Saved validation bin file to {output_path}")
-
-def main():
-    args = parse_args()
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-
-    if args.use_mxnet:
-        create_bin_from_mxnet(args.val_dataset, args.output, args.num_pairs, args.same_ratio)
-    else:
-        create_bin_from_directory(args.val_dataset, args.output, args.num_pairs, args.same_ratio)
+    print(f"Saved {num_pairs} ({len(same_pairs)} same, {len(diff_pairs)} diff) image pairs to {bin_path}")
 
 if __name__ == "__main__":
-    main()
+    assert len(sys.argv) >= 3
+    val_dir = sys.argv[1]
+    num_pairs = int(sys.argv[2])
+    bin_path = sys.argv[3] if len(sys.argv) >= 4 else "val.bin"
+    seed = int(sys.argv[4]) if len(sys.argv) >= 5 else None
+    create_val_bin(val_dir, num_pairs, bin_path, seed)

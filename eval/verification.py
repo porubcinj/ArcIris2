@@ -24,21 +24,16 @@
 # SOFTWARE.
 
 
-import datetime
-import os
 import pickle
 
-import mxnet as mx
 import numpy as np
 import sklearn
 import torch
-from mxnet import ndarray as nd
 from scipy import interpolate
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 
-from PIL import Image
-from torch import Tensor
+from torchvision.utils import save_image
 
 
 class LFold:
@@ -133,7 +128,6 @@ def calculate_val(thresholds,
     assert (embeddings1.shape[0] == embeddings2.shape[0])
     assert (embeddings1.shape[1] == embeddings2.shape[1])
     nrof_pairs = min(len(actual_issame), embeddings1.shape[0])
-    nrof_thresholds = len(thresholds)
     k_fold = LFold(n_splits=nrof_folds, shuffle=False)
 
     val = np.zeros(nrof_folds)
@@ -146,12 +140,14 @@ def calculate_val(thresholds,
     for fold_idx, (train_set, test_set) in enumerate(k_fold.split(indices)):
 
         # Find the threshold that gives FAR = far_target
-        far_train = np.zeros(nrof_thresholds)
+        far_train = np.zeros(len(thresholds))
         for threshold_idx, threshold in enumerate(thresholds):
             _, far_train[threshold_idx] = calculate_val_far(
-                threshold, dist[train_set], actual_issame[train_set])
-        if np.max(far_train) >= far_target:
-            f = interpolate.interp1d(far_train, thresholds, kind='slinear')
+                threshold, dist[train_set], actual_issame[train_set])   
+        unique_far_train, unique_indices = np.unique(far_train, return_index=True)
+        thresholds = thresholds[unique_indices]
+        if np.max(unique_far_train) >= far_target:
+            f = interpolate.interp1d(unique_far_train, thresholds, kind='slinear')
             threshold = f(far_target)
         else:
             threshold = 0.0
@@ -174,8 +170,8 @@ def calculate_val_far(threshold, dist, actual_issame):
     n_diff = np.sum(np.logical_not(actual_issame))
     # print(true_accept, false_accept)
     # print(n_same, n_diff)
-    val = float(true_accept) / float(n_same)
-    far = float(false_accept) / float(n_diff)
+    val = np.nan if n_same == 0 else float(true_accept) / float(n_same)
+    far = np.nan if n_diff == 0 else float(false_accept) / float(n_diff)
     return val, far
 
 
@@ -200,29 +196,24 @@ def evaluate(embeddings, actual_issame, nrof_folds=10, pca=0):
     return tpr, fpr, accuracy, val, val_std, far
 
 @torch.no_grad()
-def load_bin(path, image_size=(64, 512)):
+def load_bin(path, transform):
     with open(path, 'rb') as f:
-        bins = pickle.load(f)
+        images_tensor, issame_ndarray = pickle.load(f)
 
-    embeddings_list = []
-    issame_list = []
+    print(f"images_tensor.shape: {images_tensor.shape}")
+    img0 = images_tensor[0]
+    print(f"img0.shape: {img0.shape}")
+    print(f"img0.min(): {img0.min()}")
+    print(f"img0.max(): {img0.max()}")
+    save_image(img0, 'images_tensor_0_.png')
+    img1 = images_tensor[1]
+    print(f"img1.shape: {img1.shape}")
+    print(f"img1.min(): {img1.min()}")
+    print(f"img1.max(): {img1.max()}")
+    save_image(img1, 'images_tensor_1_.png')
+    print(f"issame_ndarray[0]: {issame_ndarray[0]}")
 
-    for i in range(len(bins)):
-        _bin = bins[i]
-        img1, img2, issame = _bin[0], _bin[1], _bin[2]
+    images_tensor = torch.stack([transform(img) for img in images_tensor]).to(device="cuda")
+    print(f"images_tensor.shape: {images_tensor.shape}", flush=True)
 
-        img1 = Image.fromarray(img1).convert("RGB")
-        img2 = Image.fromarray(img2).convert("RGB")
-
-        img1 = torch.from_numpy(np.array(img1)).float().permute(2, 0, 1).unsqueeze(0)
-        img2 = torch.from_numpy(np.array(img2)).float().permute(2, 0, 1).unsqueeze(0)
-
-        embeddings_list.append(img1)
-        embeddings_list.append(img2)
-        issame_list.append(issame)
-
-    embeddings_array = np.array(embeddings_list)
-
-    print(f"embeddings_array.shape: {embeddings_array.shape}")
-
-    return embeddings_array, np.array(issame_list)
+    return images_tensor, issame_ndarray

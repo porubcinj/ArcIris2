@@ -2,9 +2,7 @@ import argparse
 import logging
 import os
 
-import numpy as np
 import torch
-from torch import Tensor
 from backbones import get_model
 from dataset import get_dataloader
 from eval import verification
@@ -14,11 +12,12 @@ from partial_fc_v2 import PartialFC_V2
 from torch import distributed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from utils.utils_callbacks import CallBackLogging, CallBackVerification
+from utils.utils_callbacks import CallBackLogging
 from utils.utils_config import get_config
 from utils.utils_distributed_sampler import setup_seed
 from utils.utils_logging import AverageMeter, init_logging
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook
+from torchvision import transforms
 from eval import validation
 
 assert torch.__version__ >= "1.12.0", "In order to enjoy the features of the new torch, \
@@ -132,18 +131,17 @@ def main(args):
         num_space = 25 - len(key)
         logging.info(": " + key + " " * num_space + str(value))
 
-    #callback_verification = CallBackVerification(
-    #    val_targets=cfg.val_targets, rec_prefix=cfg.rec, 
-    #    summary_writer=summary_writer, image_size=cfg.image_size,
-    #)
-
     validation_datasets_list = []
     for name in cfg.val_targets:
-        path = os.path.join(cfg.rec, name + ".bin")
+        path = os.path.join(cfg.rec, name)
         if os.path.exists(path):
-            embeddings_tuple, issame_tuple = verification.load_bin(path, cfg.image_size)
-            combined = (embeddings_tuple, issame_tuple)
-            validation_datasets_list.append(combined)
+            val_bin = verification.load_bin(path, transform=transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]))
+            validation_datasets_list.append(val_bin)
     validation_datasets = tuple(validation_datasets_list)
 
     callback_logging = CallBackLogging(
@@ -189,11 +187,11 @@ def main(args):
                 if global_step % cfg.verbose == 0 and global_step > 0:
                     # Validation
                     backbone.eval()
-
+                    #for module in backbone.modules():
+                    #    if isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm1d):
+                    #        module.train()  # Keep BatchNorm layers in training mode
                     validation.ver_test(backbone, global_step, validation_datasets)
-
                     backbone.train()
-                    #callback_verification(global_step, backbone)
 
         if cfg.save_all_states:
             checkpoint = {

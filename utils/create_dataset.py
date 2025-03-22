@@ -51,15 +51,24 @@ def make_symlink_dir(humans: dict[str, tuple[list[str], list[str]]], images_dir:
 
     i = start_i
     for human in humans.keys():
-        side = "Right" if isRight else "Left"
-        target_dir = os.path.join(temp_dir, f"{human}_{side}")
-        os.makedirs(target_dir, exist_ok=True)
-
         # Get images list based on left/right iris
         image_ids = humans[human][isRight]
         if dataset_name != "test":
             split_idx = int(len(image_ids) * val_split)
+
+            # Skip identities if you can't make a pair of images for val.
+            if len(image_ids[:split_idx]) < 2:
+                continue
+
             image_ids = image_ids[split_idx:] if dataset_name == "train" else image_ids[:split_idx]
+        else:
+            # Skip identities if you can't make a pair of images for test.
+            if len(image_ids) < 2:
+                continue
+
+        side = "Right" if isRight else "Left"
+        target_dir = os.path.join(temp_dir, f"{human}_{side}")
+        os.makedirs(target_dir)
 
         # Create symlinks
         for image_id in image_ids:
@@ -85,14 +94,14 @@ def process_symlink_dirs(humans: dict[str, tuple[list[str], list[str]]], images_
 
         shutil.move(temp_split_dir, out_split_dir)
 
-def create_rec(images_dir: str, rec_name: str, out_split_dir: str, num_threads: int):
+def create_rec(rec_name: str, symlink_dir: str, num_threads: int):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         for ext in [".lst", ".idx", ".rec"]:
-            file_path = os.path.join(images_dir, rec_name + ext)
+            file_path = rec_name + ext
             executor.submit(lambda file_path: os.remove(file_path) if os.path.exists(file_path) else None, file_path)
 
-    subprocess.run(f"python -m mxnet.tools.im2rec --list --recursive {rec_name} \"{out_split_dir}\"", shell=True, check=True)
-    subprocess.run(f"python -m mxnet.tools.im2rec --num-thread {num_threads} --quality 100 {rec_name} \"{out_split_dir}\"", shell=True, check=True)
+    subprocess.run(f"python -m mxnet.tools.im2rec --list --recursive {rec_name} \"{symlink_dir}\"", shell=True, check=True)
+    subprocess.run(f"python -m mxnet.tools.im2rec --num-thread {num_threads} --quality 100 {rec_name} \"{symlink_dir}\"", shell=True, check=True)
 
 def get_count(command_label: tuple[str, str]):
     command, label = command_label
@@ -126,9 +135,9 @@ def create_dataset(images_dir: str, out_dir: str, val_split: float, test_split: 
     test_humans = dict(human_to_image_ids[:test_idx])
 
     # Out split dirs
-    train_dir = os.path.join(out_dir, "train")
-    val_dir = os.path.join(out_dir, "val")
-    test_dir = os.path.join(out_dir, "test")
+    train_split_dir = os.path.join(out_dir, "train")
+    val_split_dir = os.path.join(out_dir, "val")
+    test_split_dir = os.path.join(out_dir, "test")
 
     # Delete existing symlink dir tree
     shutil.rmtree(out_dir, ignore_errors=True)
@@ -137,27 +146,30 @@ def create_dataset(images_dir: str, out_dir: str, val_split: float, test_split: 
 
     # Create symlink dirs
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.submit(process_symlink_dirs, train_val_humans, images_dir, train_dir, val_split, "train")
-        executor.submit(process_symlink_dirs, train_val_humans, images_dir, val_dir, val_split, "val")
-        executor.submit(process_symlink_dirs, test_humans, images_dir, test_dir, val_split, "test")
-    print(f"Created new symlink tree", flush=True)
+        executor.submit(process_symlink_dirs, train_val_humans, images_dir, train_split_dir, val_split, "train")
+        executor.submit(process_symlink_dirs, train_val_humans, images_dir, val_split_dir, val_split, "val")
+        executor.submit(process_symlink_dirs, test_humans, images_dir, test_split_dir, val_split, "test")
+    print(f"Created new symlink trees", flush=True)
 
     # Create .rec files
-    val_threads = round(val_split * (1 - test_split) * max_threads)
-    test_threads = round(test_split * max_threads)
-    train_threads = max_threads - val_threads - test_threads
+    train_dir = os.path.join(train_split_dir, "images")
+    val_dir = os.path.join(val_split_dir, "images")
+    test_dir = os.path.join(test_split_dir, "images")
+    #val_threads = round(val_split * (1 - test_split) * max_threads)
+    test_threads = int(test_split * max_threads)
+    train_threads = max_threads - test_threads
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.submit(create_rec, images_dir, "train", train_dir, train_threads)
-        executor.submit(create_rec, images_dir, "val", val_dir, val_threads)
-        executor.submit(create_rec, images_dir, "test", test_dir, test_threads)
+        executor.submit(create_rec, "train", train_dir, train_threads)
+        #executor.submit(create_rec, "val", val_dir, val_threads)
+        executor.submit(create_rec, "test", test_dir, test_threads)
     print(f"Created .rec files", flush=True)
 
     # Get identity and image counts
     command_labels = []
-    for dataset_name in ["train", "val", "test"]:
-        for file_type in ['d', 'l']:
-            command = f"find \"{os.path.join(out_dir, dataset_name, 'images')}\" -type {file_type} | wc -l"
-            label = f"{dataset_name.capitalize()} {'identities' if file_type == 'd' else 'images'}"
+    for dataset_path in [train_dir, val_dir, test_dir]:
+        for file_type in ["d -not -empty", "l"]:
+            command = f"find \"{dataset_path}\" -type {file_type} | wc -l"
+            label = f"{dataset_path.split('/')[-2].capitalize()} {'images' if file_type == 'l' else 'identities'}"
             command_labels.append((command, label))
 
     with concurrent.futures.ThreadPoolExecutor() as executor:

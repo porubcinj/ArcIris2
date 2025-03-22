@@ -7,3 +7,4 @@
 **/*.pt
 work_dirs
 *.bin
+*.png
