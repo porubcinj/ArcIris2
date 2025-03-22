@@ -69,7 +69,7 @@ class IResNet(nn.Module):
     def __init__(self,
                  block, layers, dropout=0, num_features=512, zero_init_residual=False,
                  groups=1, width_per_group=64, replace_stride_with_dilation=None, fp16=False):
-        super(IResNet, self).__init__()
+        super().__init__()
         self.extra_gflops = 0.0
         self.fp16 = fp16
         self.inplanes = 64
@@ -146,7 +146,7 @@ class IResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        with torch.cuda.amp.autocast(self.fp16):
+        with torch.amp.autocast("cuda", enabled=self.fp16):
             x = self.conv1(x)
             x = self.bn1(x)
             x = self.prelu(x)

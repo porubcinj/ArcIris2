@@ -5,17 +5,20 @@ import os
 import torch
 from backbones import get_model
 from dataset import get_dataloader
+from eval import verification
 from losses import CombinedMarginLoss
 from lr_scheduler import PolynomialLRWarmup
 from partial_fc_v2 import PartialFC_V2
 from torch import distributed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from utils.utils_callbacks import CallBackLogging, CallBackVerification
+from utils.utils_callbacks import CallBackLogging
 from utils.utils_config import get_config
 from utils.utils_distributed_sampler import setup_seed
 from utils.utils_logging import AverageMeter, init_logging
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook
+from torchvision import transforms
+from eval import validation
 
 assert torch.__version__ >= "1.12.0", "In order to enjoy the features of the new torch, \
 we have upgraded the torch to 1.12.0. torch before than 1.12.0 may not work in the future."
@@ -63,8 +66,7 @@ def main(args):
         cfg.num_workers
     )
 
-    backbone = get_model(
-        cfg.network, dropout=0.0, fp16=cfg.fp16, num_features=cfg.embedding_size).cuda()
+    backbone = get_model(cfg.network, dropout=0.0, fp16=cfg.fp16, num_features=cfg.embedding_size).cuda()
 
     backbone = torch.nn.parallel.DistributedDataParallel(
         module=backbone, broadcast_buffers=False, device_ids=[local_rank], bucket_cap_mb=16,
@@ -129,10 +131,19 @@ def main(args):
         num_space = 25 - len(key)
         logging.info(": " + key + " " * num_space + str(value))
 
-    callback_verification = CallBackVerification(
-        val_targets=cfg.val_targets, rec_prefix=cfg.rec, 
-        summary_writer=summary_writer, image_size=cfg.image_size,
-    )
+    validation_datasets_list = []
+    for name in cfg.val_targets:
+        path = os.path.join(cfg.rec, name)
+        if os.path.exists(path):
+            val_bin = verification.load_bin(path, transform=transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ]))
+            validation_datasets_list.append(val_bin)
+    validation_datasets = tuple(validation_datasets_list)
+
     callback_logging = CallBackLogging(
         frequent=cfg.frequent,
         total_step=cfg.total_step,
@@ -174,7 +185,13 @@ def main(args):
                 callback_logging(global_step, loss_am, epoch, cfg.fp16, lr_scheduler.get_last_lr()[0], amp)
 
                 if global_step % cfg.verbose == 0 and global_step > 0:
-                    callback_verification(global_step, backbone)
+                    # Validation
+                    backbone.eval()
+                    #for module in backbone.modules():
+                    #    if isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm1d):
+                    #        module.train()  # Keep BatchNorm layers in training mode
+                    validation.ver_test(backbone, global_step, validation_datasets)
+                    backbone.train()
 
         if cfg.save_all_states:
             checkpoint = {
@@ -185,7 +202,7 @@ def main(args):
                 "state_optimizer": opt.state_dict(),
                 "state_lr_scheduler": lr_scheduler.state_dict()
             }
-            torch.save(checkpoint, os.path.join(cfg.output, f"checkpoint_gpu_{rank}.pt"))
+            torch.save(checkpoint, os.path.join(cfg.output, f"checkpoint_epoch_{epoch + 1}.pt"))
 
         if rank == 0:
             path_module = os.path.join(cfg.output, "model.pt")

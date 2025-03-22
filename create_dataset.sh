@@ -1,13 +1,16 @@
 #!/bin/bash
 #$ -m bae
 #$ -M jporubci@nd.edu
-#$ -N ArcIris2_create_dataset
+#$ -N create_dataset
 #$ -q gpu
 #$ -l gpu=1
 #$ -l h="qa-a10*|qa-rtx6k*"
+#$ -j y
+#$ -o create_dataset.log
 
 set -e
 set -o pipefail
+fsync -d 60 "$SGE_STDOUT_PATH" &
 
 PROJECT_DIR="/afs/crc.nd.edu/user/j/jporubci/Private/ArcIris2"
 IMAGES_DIR="/afs/crc/group/cvrl/czajka/gbir2/aczajka/BXGRID/iris_segmented_SegNet"

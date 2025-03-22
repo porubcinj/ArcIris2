@@ -24,7 +24,7 @@ def get_dataloader(
     dali_aug = False,
     seed = 2048,
     num_workers = 2,
-    ) -> Iterable:
+) -> Iterable:
 
     rec = os.path.join(root_dir, 'train.rec')
     idx = os.path.join(root_dir, 'train.idx')
@@ -42,10 +42,10 @@ def get_dataloader(
     # Image Folder
     else:
         transform = transforms.Compose([
-             transforms.RandomHorizontalFlip(),
-             transforms.ToTensor(),
-             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-             ])
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
         train_set = ImageFolder(root_dir, transform)
 
     # DALI
@@ -264,8 +264,8 @@ def dali_data_iter(
     return DALIWarper(DALIClassificationIterator(pipelines=[pipe], reader_name=name, ))
 
 
-@torch.no_grad()
 class DALIWarper(object):
+    @torch.no_grad()
     def __init__(self, dali_iter):
         self.iter = dali_iter
 

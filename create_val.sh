@@ -1,19 +1,22 @@
 #!/bin/bash
 #$ -m bae
 #$ -M jporubci@nd.edu
-#$ -N ArcIris2_r100
+#$ -N create_val
 #$ -q gpu
 #$ -l gpu=1
 #$ -l h="qa-a10*|qa-rtx6k*"
 #$ -j y
-#$ -o r100.log
+#$ -o create_val.log
 
 set -e
 set -o pipefail
 fsync -d 60 "$SGE_STDOUT_PATH" &
 
 PROJECT_DIR="/afs/crc.nd.edu/user/j/jporubci/Private/ArcIris2"
-CONFIG="r100"
+VAL_DIR="/project01/cvrl/jporubci/ArcIris Dataset/val/images"
+NUM_PAIRS=4096
+BIN_PATH="val.bin"
+SEED=42
 
 cd "$PROJECT_DIR"
 
@@ -25,4 +28,4 @@ source .venv/bin/activate
 pip install --upgrade pip -q
 pip install -r requirements.txt -q
 
-stdbuf -oL python train_v2.py "configs/$CONFIG"
+python utils/create_val_bin.py "$VAL_DIR" "$NUM_PAIRS" "$BIN_PATH" "$SEED"
