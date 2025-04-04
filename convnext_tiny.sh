@@ -1,19 +1,19 @@
 #!/bin/bash
 #$ -m bae
 #$ -M jporubci@nd.edu
-#$ -N ArcIris2_r50
+#$ -N ArcIris2_convnext_tiny
 #$ -q gpu
 #$ -l gpu=2
 #$ -l h="qa-a10*|qa-rtx6k*"
 #$ -j y
-#$ -o r50.log
+#$ -o convnext_tiny.log
 
 set -e
 set -o pipefail
 fsync -d 60 "$SGE_STDOUT_PATH" &
 
 PROJECT_DIR="/afs/crc.nd.edu/user/j/jporubci/Private/ArcIris2"
-CONFIG="r50"
+CONFIG="convnext_tiny"
 
 cd "$PROJECT_DIR"
 

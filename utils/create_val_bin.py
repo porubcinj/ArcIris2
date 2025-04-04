@@ -3,7 +3,6 @@ import random
 import numpy as np
 import torch
 from torchvision.io import decode_image, ImageReadMode
-import torchvision.transforms as transforms
 import pickle
 import sys
 

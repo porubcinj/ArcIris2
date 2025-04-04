@@ -8,57 +8,33 @@ from dataset import get_dataloader
 from eval import verification
 from losses import CombinedMarginLoss
 from lr_scheduler import PolynomialLRWarmup
-from partial_fc_v2 import PartialFC_V2
-from torch import distributed
+from partial_fc_v2_dp import PartialFC_V2_DP
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from utils.utils_callbacks import CallBackLogging
 from utils.utils_config import get_config
-from utils.utils_distributed_sampler import setup_seed
 from utils.utils_logging import AverageMeter, init_logging
-from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook
 from torchvision import transforms
 from eval import validation
 
 assert torch.__version__ >= "1.12.0", "In order to enjoy the features of the new torch, \
 we have upgraded the torch to 1.12.0. torch before than 1.12.0 may not work in the future."
 
-try:
-    rank = int(os.environ["RANK"])
-    local_rank = int(os.environ["LOCAL_RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
-    distributed.init_process_group("nccl")
-except KeyError:
-    rank = 0
-    local_rank = 0
-    world_size = 1
-    distributed.init_process_group(
-        backend="nccl",
-        init_method="tcp://127.0.0.1:12584",
-        rank=rank,
-        world_size=world_size,
-    )
-
-
 def main(args):
     cfg = get_config(args.config)
 
-    setup_seed(seed=cfg.seed, cuda_deterministic=False)
-
-    torch.cuda.set_device(local_rank)
+    torch.cuda.set_device(0)
 
     os.makedirs(cfg.output, exist_ok=True)
-    init_logging(rank, cfg.output)
+    init_logging(0, cfg.output)
 
     summary_writer = (
         SummaryWriter(log_dir=os.path.join(cfg.output, "tensorboard"))
-        if rank == 0
-        else None
     )
 
     train_loader = get_dataloader(
         cfg.rec,
-        local_rank,
+        0,
         cfg.batch_size,
         cfg.dali,
         cfg.dali_aug,
@@ -68,14 +44,11 @@ def main(args):
 
     backbone = get_model(cfg.network, dropout=0.0, fp16=cfg.fp16, num_features=cfg.embedding_size).cuda()
 
-    backbone = torch.nn.parallel.DistributedDataParallel(
-        module=backbone, broadcast_buffers=False, device_ids=[local_rank], bucket_cap_mb=16,
-        find_unused_parameters=True)
-    backbone.register_comm_hook(None, fp16_compress_hook)
+    backbone = torch.nn.DataParallel(backbone)
 
     backbone.train()
     # FIXME using gradient checkpoint if there are some unused parameters will cause error
-    backbone._set_static_graph()
+    #backbone._set_static_graph()
 
     margin_loss = CombinedMarginLoss(
         64,
@@ -86,7 +59,7 @@ def main(args):
     )
 
     if cfg.optimizer == "sgd":
-        module_partial_fc = PartialFC_V2(
+        module_partial_fc = PartialFC_V2_DP(
             margin_loss, cfg.embedding_size, cfg.num_classes,
             cfg.sample_rate, False)
         module_partial_fc.train().cuda()
@@ -96,7 +69,7 @@ def main(args):
             lr=cfg.lr, momentum=0.9, weight_decay=cfg.weight_decay)
 
     elif cfg.optimizer == "adamw":
-        module_partial_fc = PartialFC_V2(
+        module_partial_fc = PartialFC_V2_DP(
             margin_loss, cfg.embedding_size, cfg.num_classes,
             cfg.sample_rate, False)
         module_partial_fc.train().cuda()
@@ -106,7 +79,7 @@ def main(args):
     else:
         raise
 
-    cfg.total_batch_size = cfg.batch_size * world_size
+    cfg.total_batch_size = cfg.batch_size
     cfg.warmup_step = cfg.num_image // cfg.total_batch_size * cfg.warmup_epoch
     cfg.total_step = cfg.num_image // cfg.total_batch_size * cfg.num_epoch
 
@@ -118,7 +91,7 @@ def main(args):
     start_epoch = 0
     global_step = 0
     if cfg.resume:
-        dict_checkpoint = torch.load(os.path.join(cfg.output, f"checkpoint_gpu_{rank}.pt"))
+        dict_checkpoint = torch.load(os.path.join(cfg.output, f"checkpoint.pt"))
         start_epoch = dict_checkpoint["epoch"]
         global_step = dict_checkpoint["global_step"]
         backbone.module.load_state_dict(dict_checkpoint["state_dict_backbone"])
@@ -143,6 +116,9 @@ def main(args):
             ]))
             validation_datasets_list.append(val_bin)
     validation_datasets = tuple(validation_datasets_list)
+    best_val = 0
+    patience = 5
+    no_improve_counter = 0
 
     callback_logging = CallBackLogging(
         frequent=cfg.frequent,
@@ -187,11 +163,25 @@ def main(args):
                 if global_step % cfg.verbose == 0 and global_step > 0:
                     # Validation
                     backbone.eval()
-                    #for module in backbone.modules():
-                    #    if isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm1d):
-                    #        module.train()  # Keep BatchNorm layers in training mode
-                    validation.ver_test(backbone, global_step, validation_datasets)
+                    d_primes = validation.ver_test(backbone, global_step, validation_datasets, cfg.embedding_size)
+                    current_val = d_primes[0]
+                    if current_val <= best_val:
+                        pass#no_improve_counter += 1
+                    else:
+                        best_val = current_val
+                        no_improve_counter = 0
+
+                    path_module = os.path.join(cfg.output, f"model_global_step_{global_step}_val_d_prime_{current_val}.pt")
+                    torch.save(backbone.module.state_dict(), path_module)
+                    print(f"Model saved with d prime score: {current_val}")
                     backbone.train()
+
+                    if no_improve_counter >= patience:
+                        print("Early stopping triggered. Stopping training to prevent overfitting.")
+                        break
+
+        if no_improve_counter >= patience:
+            break
 
         if cfg.save_all_states:
             checkpoint = {
@@ -202,17 +192,16 @@ def main(args):
                 "state_optimizer": opt.state_dict(),
                 "state_lr_scheduler": lr_scheduler.state_dict()
             }
-            torch.save(checkpoint, os.path.join(cfg.output, f"checkpoint_epoch_{epoch + 1}.pt"))
+            torch.save(checkpoint, os.path.join(cfg.output, f"checkpoint.pt"))
 
-        if rank == 0:
-            path_module = os.path.join(cfg.output, "model.pt")
-            torch.save(backbone.module.state_dict(), path_module)
-                
+        path_module = os.path.join(cfg.output, "model.pt")
+        torch.save(backbone.module.state_dict(), path_module)
+
         if cfg.dali:
             train_loader.reset()
 
-    if rank == 0:
-        path_module = os.path.join(cfg.output, "model.pt")
+    if no_improve_counter < patience:
+        path_module = os.path.join(cfg.output, "model_final.pt")
         torch.save(backbone.module.state_dict(), path_module)
 
 

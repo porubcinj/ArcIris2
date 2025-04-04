@@ -3,7 +3,7 @@
 #$ -M jporubci@nd.edu
 #$ -N ArcIris2_r100
 #$ -q gpu
-#$ -l gpu=1
+#$ -l gpu=2
 #$ -l h="qa-a10*|qa-rtx6k*"
 #$ -j y
 #$ -o r100.log

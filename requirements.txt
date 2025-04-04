@@ -1,4 +1,6 @@
 easydict
+ipykernel
+jupyter
 mxnet
 numpy<1.24
 onnx

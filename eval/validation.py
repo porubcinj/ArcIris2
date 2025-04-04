@@ -1,33 +1,28 @@
-import numpy as np
 from torch import Tensor
 import torch
-import sklearn
 from eval.verification import evaluate
 import logging
-from torch.nn.parallel import DistributedDataParallel
-from numpy.typing import NDArray
+from torch.nn.parallel import DataParallel
 
-def ver_test(backbone: DistributedDataParallel, global_step: int, validation_datasets):
-    for images_tensor, issame_ndarray in validation_datasets:
-        tpr, fpr, acc, std, xnorm, val, val_std, far, _ = test(backbone, images_tensor, issame_ndarray)
-
-        logging.info(f'[val][{global_step}]XNorm: {xnorm}')
-        #logging.info(f'[val][{global_step}]tpr: {tpr}')
-        #logging.info(f'[val][{global_step}]fpr: {fpr}')
-        logging.info(f'[val][{global_step}]val: {val}')
-        logging.info(f'[val][{global_step}]val_std: {val_std}')
-        logging.info(f'[val][{global_step}]far: {far}')
-        logging.info(f'[val][{global_step}]Accuracy: {acc}±{std}')
+def ver_test(backbone: DataParallel, global_step: int, validation_datasets, embedding_size: int):
+    d_primes = []
+    for images_tensor, actual_issame in validation_datasets:
+        actual_issame = torch.tensor(actual_issame, dtype=torch.bool, device=images_tensor.device)
+        d_prime = test(backbone, images_tensor, actual_issame, embedding_size)
+        logging.info(f'[val][Global step: {global_step}] d prime: {d_prime}')
+        d_primes.append(d_prime)
+    return d_primes
 
 @torch.no_grad()
-def test(backbone: DistributedDataParallel, images_tensor: Tensor, issame_ndarray: NDArray):
-    embeddings = None
+def test(backbone: DataParallel, images_tensor: Tensor, actual_issame: Tensor, embedding_size: int):
+    device = images_tensor.device
 
-    assert len(images_tensor) == len(issame_ndarray) * 2
+    assert len(images_tensor) == len(actual_issame) * 2
     batch_size = 128
+    embeddings = torch.zeros((len(images_tensor), embedding_size), device=device)
 
     for i in range(0, len(images_tensor), batch_size):
-        batch = images_tensor[i:i+batch_size]
+        batch = images_tensor[i:i+batch_size].to(device)
         #print(f"Batch {i//batch_size}: {batch.shape}")
         #assert not torch.isnan(batch).any(), "Image contains NaN values!"
         #print(f"batch.shape: {batch.shape}")
@@ -41,25 +36,10 @@ def test(backbone: DistributedDataParallel, images_tensor: Tensor, issame_ndarra
         #print(f"num_nans: {num_nans}")
         #print(f"num_non_nans: {num_non_nans}")
         #assert not torch.isnan(net_out).any(), "net_out contains NaN values!"
-        _embeddings = net_out.detach().cpu().numpy()
-        print(f"_embeddings.shape: {_embeddings.shape}")
-        assert not torch.isnan(torch.from_numpy(_embeddings)).any(), "_embeddings contains NaN values!"
+        embeddings[i:i+batch_size, :] = net_out.detach()
+        print(f"net_out.shape: {net_out.shape}")
+        assert not torch.isnan(net_out).any(), "net_out contains NaN values!"
 
-        if embeddings is None:
-            embeddings = np.zeros((len(images_tensor), _embeddings.shape[1]))
-        embeddings[i:i+batch_size, :] = _embeddings
-
-    _xnorm = 0.0
-    _xnorm_cnt = 0
-    for i in range(embeddings.shape[0]):
-        _em = embeddings[i]
-        _norm = np.linalg.norm(_em)
-        _xnorm += _norm
-        _xnorm_cnt += 1
-    _xnorm /= _xnorm_cnt
-
-    embeddings = sklearn.preprocessing.normalize(embeddings)
-    tpr, fpr, accuracy, val, val_std, far = evaluate(embeddings, issame_ndarray)
-    acc, std = np.mean(accuracy), np.std(accuracy)
-
-    return tpr, fpr, acc, std, _xnorm, val, val_std, far, embeddings
+    embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+    d_prime = evaluate(embeddings, actual_issame)
+    return d_prime

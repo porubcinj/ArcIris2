@@ -1,9 +1,8 @@
 from .iresnet import iresnet18, iresnet34, iresnet50, iresnet100, iresnet200
-from .mobilefacenet import get_mbf
+from .convnext import ArcFaceConvNeXt
 
-
-def get_model(name, **kwargs):
-    # resnet
+def get_model(name: str, **kwargs):
+    # ResNet
     if name == "r18":
         return iresnet18(False, **kwargs)
     elif name == "r34":
@@ -14,8 +13,12 @@ def get_model(name, **kwargs):
         return iresnet100(False, **kwargs)
     elif name == "r200":
         return iresnet200(False, **kwargs)
-    else:
-        raise ValueError()
+
+    # ConvNeXt
+    if name.startswith("convnext_"):
+        return ArcFaceConvNeXt(name, **kwargs)
+
+    raise ValueError()
 """
     elif name == "r2060":
         from .iresnet2060 import iresnet2060
