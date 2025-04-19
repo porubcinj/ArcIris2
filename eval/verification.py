@@ -1,16 +1,15 @@
 import pickle
 import torch
-from torchvision.utils import save_image
 
-def evaluate(embeddings: torch.Tensor, actual_issame: torch.Tensor):
+def evaluate(embeddings: torch.Tensor, issame: torch.Tensor):
     embeddings1 = embeddings[0::2]
     embeddings2 = embeddings[1::2]
 
     cosine_similarity = torch.nn.functional.cosine_similarity(embeddings1, embeddings2, dim=1)
     arc_distances = torch.acos(cosine_similarity)
 
-    genuine_distribution = arc_distances[actual_issame]
-    imposter_distribution = arc_distances[~actual_issame]
+    genuine_distribution = arc_distances[issame]
+    imposter_distribution = arc_distances[~issame]
 
     m1 = torch.mean(genuine_distribution, dim=0)
     m2 = torch.mean(imposter_distribution, dim=0)
@@ -21,24 +20,25 @@ def evaluate(embeddings: torch.Tensor, actual_issame: torch.Tensor):
     return d_prime
 
 @torch.no_grad()
-def load_bin(path, transform):
+def load_bin(path):
+    image_pairs_tensor: torch.Tensor
+    issame: torch.Tensor
+
     with open(path, 'rb') as f:
-        images_tensor, issame_ndarray = pickle.load(f)
+        image_pairs_tensor, issame = pickle.load(f)
 
-    print(f"images_tensor.shape: {images_tensor.shape}")
-    img0 = images_tensor[0]
-    print(f"img0.shape: {img0.shape}")
-    print(f"img0.min(): {img0.min()}")
-    print(f"img0.max(): {img0.max()}")
-    save_image(img0, 'images_tensor_0_.png')
-    img1 = images_tensor[1]
-    print(f"img1.shape: {img1.shape}")
-    print(f"img1.min(): {img1.min()}")
-    print(f"img1.max(): {img1.max()}")
-    save_image(img1, 'images_tensor_1_.png')
-    print(f"issame_ndarray[0]: {issame_ndarray[0]}")
+    image_pairs_tensor = image_pairs_tensor.cuda(non_blocking=True)
+    issame = issame.cuda(non_blocking=True)
 
-    images_tensor = torch.stack([transform(img) for img in images_tensor]).to(device="cuda")
-    print(f"images_tensor.shape: {images_tensor.shape}", flush=True)
+    print(f"image_pairs_tensor.shape: {image_pairs_tensor.shape}")
+    image_0 = image_pairs_tensor[0]
+    print(f"image_0.shape: {image_0.shape}")
+    print(f"image_0.min(): {image_0.min()}")
+    print(f"image_0.max(): {image_0.max()}")
+    image_1 = image_pairs_tensor[1]
+    print(f"image_1.shape: {image_1.shape}")
+    print(f"image_1.min(): {image_1.min()}")
+    print(f"image_1.max(): {image_1.max()}")
+    print(f"issame[0]: {issame[0]}")
 
-    return images_tensor, issame_ndarray
+    return image_pairs_tensor, issame

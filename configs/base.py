@@ -10,30 +10,30 @@ config = edict()
 config.margin_list = (1.0, 0.5, 0.0)
 config.network = "r50"
 config.resume = False
-config.save_all_states = False
-config.output = "ms1mv3_arcface_r50"
+config.save_all_states = True
+config.output = None
 
 config.embedding_size = 512
 
 # Partial FC
-config.sample_rate = 1
+config.sample_rate = 1.0
 config.interclass_filtering_threshold = 0
 
-config.fp16 = False
+config.fp16 = True
 config.batch_size = 128
 
-# For SGD 
-config.optimizer = "sgd"
-config.lr = 0.1
-config.momentum = 0.9
-config.weight_decay = 5e-4
+# For SGD
+#config.optimizer = "sgd"
+#config.lr = 0.001
+#config.momentum = 0.9
+#config.weight_decay = 5e-4
 
 # For AdamW
-# config.optimizer = "adamw"
-# config.lr = 0.001
-# config.weight_decay = 0.1
+config.optimizer = "adamw"
+config.lr = 0.001
+config.weight_decay = 0.01
 
-config.verbose = 2000
+config.verbose = 2000 # Number of global steps between logging and running validation
 config.frequent = 10
 
 # For Large Sacle Dataset, such as WebFace42M
@@ -57,4 +57,15 @@ config.wandb_entity = "entity"
 config.wandb_project = "project"
 config.wandb_log_all = True
 config.save_artifacts = False
-config.wandb_resume = False # resume wandb run: Only if the you wand t resume the last run that it was interrupted
+config.wandb_resume = False
+
+config.train_dir = "/project01/cvrl/jporubci/ArcIris Dataset/train"
+config.val_dir = "/project01/cvrl/jporubci/ArcIris Dataset/val"
+config.test_dir = "/project01/cvrl/jporubci/ArcIris Dataset/test"
+config.num_classes = 2071
+config.num_image = 182644
+config.num_epoch = 200
+config.warmup_epoch = 0
+config.val_target = "val.bin"
+config.debug = False
+config.strategy = "" # ["", "noise", "blur", "randomly_noise_or_blur"]

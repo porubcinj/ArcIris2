@@ -1,0 +1,16 @@
+images_dir: /afs/crc/group/cvrl/czajka/gbir2/aczajka/BXGRID/iris_segmented_SegNet
+out_dir: /project01/cvrl/jporubci/ArcIris Dataset
+val_split: 0.2
+test_split: 0.2
+img_uid_map: img_uid_map.json
+seed: 42
+
+Shuffled
+Removed existing symlink tree
+Created new symlink trees
+Train identities: 2071
+Train images: 182644
+Val identities: 2071
+Val images: 44791
+Test identities: 552
+Test images: 58259

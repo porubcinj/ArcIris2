@@ -36,38 +36,16 @@ def get_human_to_image_ids(img_uid_map: str) -> list[tuple[str, tuple[list[str],
 
     return human_to_image_id_shuffled_list_items
 
-def make_symlink_dir(humans: dict[str, tuple[list[str], list[str]]], images_dir: str, temp_dir: str, isRight: int, isMask: bool, val_split: float, dataset_name: str):
-    start_i = 0
-    if isRight:
-        if dataset_name != "test":
-            for human in humans.keys():
-                left_image_ids = humans[human][0]
-                split_idx = int(len(left_image_ids) * val_split)
-                left_image_ids = left_image_ids[split_idx:] if dataset_name == "train" else left_image_ids[:split_idx]
-                start_i += len(left_image_ids)
-        else:
-            for human in humans.keys():
-                start_i += len(humans[human][0])
-
-    i = start_i
-    for human in humans.keys():
+def make_symlink_dir(humans: dict[str, list[str]], images_dir: str, temp_dir: str, isMask: bool, val_split: float, dataset_name: str):
+    i = 0
+    for j, human in enumerate(humans.keys()):
         # Get images list based on left/right iris
-        image_ids = humans[human][isRight]
+        image_ids = humans[human]
         if dataset_name != "test":
             split_idx = int(len(image_ids) * val_split)
-
-            # Skip identities if you can't make a pair of images for val.
-            if len(image_ids[:split_idx]) < 2:
-                continue
-
             image_ids = image_ids[split_idx:] if dataset_name == "train" else image_ids[:split_idx]
-        else:
-            # Skip identities if you can't make a pair of images for test.
-            if len(image_ids) < 2:
-                continue
 
-        side = "Right" if isRight else "Left"
-        target_dir = os.path.join(temp_dir, f"{human}_{side}")
+        target_dir = os.path.join(temp_dir, str(j))
         os.makedirs(target_dir)
 
         # Create symlinks
@@ -77,14 +55,14 @@ def make_symlink_dir(humans: dict[str, tuple[list[str], list[str]]], images_dir:
             os.symlink(src, dst)
             i += 1
 
-def process_symlink_dirs(humans: dict[str, tuple[list[str], list[str]]], images_dir: str, out_split_dir: str, val_split: float, dataset_name: str):
+def process_symlink_dirs(humans: dict[str, list[str]], images_dir: str, out_split_dir: str, val_split: float, dataset_name: str):
     with tempfile.TemporaryDirectory() as temp_split_dir:
         with tempfile.TemporaryDirectory() as temp_images_dir, tempfile.TemporaryDirectory() as temp_masks_dir:
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                executor.submit(make_symlink_dir, humans, images_dir, temp_images_dir, False, False, val_split, dataset_name)
-                executor.submit(make_symlink_dir, humans, images_dir, temp_images_dir, True, False, val_split, dataset_name)
-                executor.submit(make_symlink_dir, humans, images_dir, temp_masks_dir, False, True, val_split, dataset_name)
-                executor.submit(make_symlink_dir, humans, images_dir, temp_masks_dir, True, True, val_split, dataset_name)
+                executor.submit(make_symlink_dir, humans, images_dir, temp_images_dir, False, val_split, dataset_name)
+                executor.submit(make_symlink_dir, humans, images_dir, temp_images_dir, False, val_split, dataset_name)
+                executor.submit(make_symlink_dir, humans, images_dir, temp_masks_dir, True, val_split, dataset_name)
+                executor.submit(make_symlink_dir, humans, images_dir, temp_masks_dir, True, val_split, dataset_name)
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 images_target = os.path.join(temp_split_dir, "images")
@@ -134,6 +112,20 @@ def create_dataset(images_dir: str, out_dir: str, val_split: float, test_split: 
     train_val_humans = dict(human_to_image_ids[test_idx:])
     test_humans = dict(human_to_image_ids[:test_idx])
 
+    # Flatten human-side keys
+    train_val_humans = {
+        f"{human}_{i}": val
+        for human, tup in train_val_humans.items()
+        for i, val in enumerate(tup)
+        if int(len(val) * val_split) >= 2 # Skip identities if you can't make a pair of images for val.
+    }
+    test_humans = {
+        f"{human}_{i}": val
+        for human, tup in test_humans.items()
+        for i, val in enumerate(tup)
+        if len(val) >= 2 # Skip identities if you can't make a pair of images for test.
+    }
+
     # Out split dirs
     train_split_dir = os.path.join(out_dir, "train")
     val_split_dir = os.path.join(out_dir, "val")
@@ -155,20 +147,21 @@ def create_dataset(images_dir: str, out_dir: str, val_split: float, test_split: 
     train_dir = os.path.join(train_split_dir, "images")
     val_dir = os.path.join(val_split_dir, "images")
     test_dir = os.path.join(test_split_dir, "images")
-    #val_threads = round(val_split * (1 - test_split) * max_threads)
-    test_threads = int(test_split * max_threads)
-    train_threads = max_threads - test_threads
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.submit(create_rec, "train", train_dir, train_threads)
-        #executor.submit(create_rec, "val", val_dir, val_threads)
-        executor.submit(create_rec, "test", test_dir, test_threads)
-    print(f"Created .rec files", flush=True)
+    if False:
+        #val_threads = round(val_split * (1 - test_split) * max_threads)
+        test_threads = int(test_split * max_threads)
+        train_threads = max_threads - test_threads
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            executor.submit(create_rec, "train", train_dir, train_threads)
+            #executor.submit(create_rec, "val", val_dir, val_threads)
+            executor.submit(create_rec, "test", test_dir, test_threads)
+        print(f"Created .rec files", flush=True)
 
     # Get identity and image counts
     command_labels = []
     for dataset_path in [train_dir, val_dir, test_dir]:
         for file_type in ["d -not -empty", "l"]:
-            command = f"find \"{dataset_path}\" -type {file_type} | wc -l"
+            command = f"find \"{dataset_path}\" -mindepth 1 -type {file_type} | wc -l"
             label = f"{dataset_path.split('/')[-2].capitalize()} {'images' if file_type == 'l' else 'identities'}"
             command_labels.append((command, label))
 

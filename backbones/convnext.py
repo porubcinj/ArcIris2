@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.models import convnext_tiny, convnext_small, convnext_base, convnext_large
 
-class ArcFaceConvNeXt(nn.Module):
+class ArcIrisConvNeXt(nn.Module):
     def __init__(self, model_name: str, num_features=512, fp16=False, **kwargs):
         super().__init__()
         self.fp16 = fp16

@@ -1,0 +1,4 @@
+torch.Size([8192, 1, 64, 512])
+torch.Size([8192, 1, 64, 512])
+torch.Size([8192, 3, 64, 512])
+Saved 4096 (2048 same, 2048 diff) image pairs to val.bin

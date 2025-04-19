@@ -1,5 +1,6 @@
 easydict
 ipykernel
+ipywidgets
 jupyter
 mxnet
 numpy<1.24

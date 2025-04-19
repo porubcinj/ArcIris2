@@ -2,11 +2,8 @@ import logging
 import os
 import sys
 
-
+"""Computes and stores the average and current value"""
 class AverageMeter(object):
-    """Computes and stores the average and current value
-    """
-
     def __init__(self):
         self.val = None
         self.avg = None

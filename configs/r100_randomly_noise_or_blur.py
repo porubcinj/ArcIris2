@@ -2,7 +2,7 @@ from easydict import EasyDict as edict
 
 config = edict()
 config.margin_list = (1.0, 0.5, 0.0)
-config.network = "r50"
+config.network = "r100"
 config.resume = False
 config.save_all_states = True
 config.output = None
@@ -26,4 +26,4 @@ config.warmup_epoch = 0
 config.val_target = "val.bin"
 config.num_workers = 2
 config.debug = True
-config.strategy = "" # ["", "noise", "blur", "randomly_noise_or_blur"]
+config.strategy = "randomly_noise_or_blur" # ["", "noise", "blur", "randomly_noise_or_blur"]

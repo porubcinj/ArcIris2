@@ -2,8 +2,8 @@ from easydict import EasyDict as edict
 
 config = edict()
 config.margin_list = (1.0, 0.5, 0.0)
-config.network = "r50"
-config.resume = False
+config.network = "r200"
+config.resume = True
 config.save_all_states = True
 config.output = None
 config.embedding_size = 512

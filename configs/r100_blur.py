@@ -2,8 +2,8 @@ from easydict import EasyDict as edict
 
 config = edict()
 config.margin_list = (1.0, 0.5, 0.0)
-config.network = "r50"
-config.resume = False
+config.network = "r100"
+config.resume = True
 config.save_all_states = True
 config.output = None
 config.embedding_size = 512
@@ -26,4 +26,4 @@ config.warmup_epoch = 0
 config.val_target = "val.bin"
 config.num_workers = 2
 config.debug = True
-config.strategy = "" # ["", "noise", "blur", "randomly_noise_or_blur"]
+config.strategy = "blur" # ["", "noise", "blur", "randomly_noise_or_blur"]
